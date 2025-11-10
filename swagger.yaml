@@ -1,0 +1,349 @@
+openapi: 3.1.0
+info:
+  title: Eczane Otomasyonu API
+  description: Eczane ilaç, stok ve satış yönetimi için API
+  version: 1.0.0
+servers:
+  - url: /
+paths:
+  /:
+    get:
+      summary: Root
+      operationId: root__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /login:
+    post:
+      summary: Login
+      operationId: login_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonnelLogin'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /drugs:
+    get:
+      summary: Get All Drugs
+      operationId: get_all_drugs_drugs_get
+      security:
+        - HTTPBearer: []
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Drug'
+                title: Response Get All Drugs Drugs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      summary: Create Drug
+      operationId: create_drug_drugs_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DrugCreate'
+        required: true
+      security:
+        - HTTPBearer: []
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Drug'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /drugs/low-stock:
+    get:
+      summary: Get Low Stock Drugs
+      operationId: get_low_stock_drugs_drugs_low_stock_get
+      security:
+        - HTTPBearer: []
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Drug'
+                title: Response Get Low Stock Drugs Drugs Low Stock Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /drugs/{drug_id}:
+    put:
+      summary: Update Drug
+      operationId: update_drug_drugs__drug_id__put
+      parameters:
+        - name: drug_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Drug Id
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DrugCreate'
+        required: true
+      security:
+        - HTTPBearer: []
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Drug'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Delete Drug
+      operationId: delete_drug_drugs__drug_id__delete
+      parameters:
+        - name: drug_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Drug Id
+      security:
+        - HTTPBearer: []
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /sales:
+    get:
+      summary: Get Sales History
+      operationId: get_sales_history_sales_get
+      security:
+        - HTTPBearer: []
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sale'
+                title: Response Get Sales History Sales Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      summary: Make Sale
+      operationId: make_sale_sales_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleCreate'
+        required: true
+      security:
+        - HTTPBearer: []
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    Drug:
+      properties:
+        name:
+          type: string
+          title: Name
+        description:
+          type: string
+          nullable: true
+          title: Description
+        price:
+          type: number
+          title: Price
+        stock_quantity:
+          type: integer
+          title: Stock Quantity
+        id:
+          type: string
+          title: Id
+        low_stock_threshold:
+          type: integer
+          title: Low Stock Threshold
+      type: object
+      required:
+        - name
+        - price
+        - stock_quantity
+        - id
+        - low_stock_threshold
+      title: Drug
+    DrugCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        description:
+          type: string
+          nullable: true
+          title: Description
+        price:
+          type: number
+          title: Price
+        stock_quantity:
+          type: integer
+          title: Stock Quantity
+        low_stock_threshold:
+          type: integer
+          title: Low Stock Threshold
+          default: 10
+      type: object
+      required:
+        - name
+        - price
+        - stock_quantity
+      title: DrugCreate
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    PersonnelLogin:
+      properties:
+        username:
+          type: string
+          title: Username
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+        - username
+        - password
+      title: PersonnelLogin
+    Sale:
+      properties:
+        id:
+          type: string
+          title: Id
+        drug_id:
+          type: string
+          title: Drug Id
+        quantity_sold:
+          type: integer
+          title: Quantity Sold
+        total_price:
+          type: number
+          title: Total Price
+        timestamp:
+          type: string
+          format: date-time
+          title: Timestamp
+      type: object
+      required:
+        - id
+        - drug_id
+        - quantity_sold
+        - total_price
+        - timestamp
+      title: Sale
+    SaleCreate:
+      properties:
+        drug_id:
+          type: string
+          title: Drug Id
+        quantity:
+          type: integer
+          title: Quantity
+      type: object
+      required:
+        - drug_id
+        - quantity
+      title: SaleCreate
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+              - type: string
+              - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+        - loc
+        - msg
+        - type
+      title: ValidationError
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer
