@@ -1,0 +1,19 @@
+version: '3.8'
+services:
+  eczane-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+  
+  eczane-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    ports:
+      - "5000:5000"
+    environment:
+      - API_URL=http://eczane-backend:8000
+    depends_on:
+      - eczane-backend

@@ -1,323 +1,154 @@
-from fastapi import FastAPI, HTTPException, status, Depends, Security
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, HTTPException, Depends, status
 from pydantic import BaseModel
-from typing import List, Optional
-from uuid import uuid4
-import datetime
+from typing import Optional, List
+from datetime import datetime
+import random  # İTS ve Depo simülasyonu için
 
-app = FastAPI(
-    title="Eczane Otomasyonu API",
-    version="1.0.0",
-    description="Eczane ilaç, stok ve satış yönetimi için API"
-)
+app = FastAPI()
 
-# --- CORS İzinleri ---
-# (Frontend'in bağlanabilmesi için DersYoldaşı örneğindeki gibi)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# --- VERİTABANI (Simülasyon) ---
+users_db = {
+    "yonetici": {"password": "admin123", "role": "Yönetici"},
+    "personel": {"password": "123", "role": "Personel"}
+}
 
-# --- MOCK VERİTABANI ---
-# Veriler sunucu yeniden başladığında sıfırlanır.
-
-# Personel (Kullanıcı) Veritabanı
-# Roller: Yonetici, Personel (Sequence diagramına göre)
-personnel_db = [
-    {
-        "id": "admin_1",
-        "username": "yonetici",
-        "password": "admin123", # ÖNEMLİ: Şifreler asla böyle saklanmamalı!
-        "full_name": "Selin Yönetici",
-        "role": "Yonetici"
-    },
-    {
-        "id": "user_1",
-        "username": "personel",
-        "password": "user123",
-        "full_name": "Ahmet Personel",
-        "role": "Personel"
-    }
-]
-
-# İlaç Veritabanı
 drugs_db = [
-    {
-        "id": "drug_1",
-        "name": "Parol",
-        "description": "Ağrı kesici",
-        "price": 50.75,
-        "stock_quantity": 100,
-        "low_stock_threshold": 20 # Düşük stok sınırı
-    },
-    {
-        "id": "drug_2",
-        "name": "Nurofen",
-        "description": "Ağrı kesici",
-        "price": 80.00,
-        "stock_quantity": 15, # Düşük stokta!
-        "low_stock_threshold": 20
-    }
+    {"id": 1, "name": "Parol", "active_ingredient": "Parasetamol", "price": 50.0, "stock_quantity": 100, "description": "Ağrı kesici"},
+    {"id": 2, "name": "Majezik", "active_ingredient": "Flurbiprofen", "price": 85.0, "stock_quantity": 20, "description": "Anti-enflamatuar"},
+    {"id": 3, "name": "Aspirin", "active_ingredient": "Asetilsalisilik Asit", "price": 30.0, "stock_quantity": 5, "description": "Kan sulandırıcı"}
 ]
 
-# Satış Kayıtları Veritabanı
-sales_db = []
+customers_db = []  # Müşteri listesi
+sales_db = []      # Satış geçmişi
 
-# --- MODELLER (Pydantic) ---
-
-# 1. Giriş Modelleri
-class PersonnelLogin(BaseModel):
+# --- MODELLER ---
+class UserLogin(BaseModel):
     username: str
     password: str
 
-class PersonnelInfo(BaseModel):
-    id: str
-    username: str
-    full_name: str
-    role: str
-
-# 2. İlaç ve Stok Modelleri
-class DrugBase(BaseModel):
+class Drug(BaseModel):
+    id: Optional[int] = None
     name: str
-    description: Optional[str] = None
+    active_ingredient: str
     price: float
     stock_quantity: int
+    description: Optional[str] = None
 
-class DrugCreate(DrugBase):
-    low_stock_threshold: int = 10 # Opsiyonel, varsayılanı 10
+class Customer(BaseModel):
+    id: Optional[int] = None
+    name: str
+    tc_no: str
+    phone: str
 
-class Drug(DrugBase):
-    id: str
-    low_stock_threshold: int
+class SaleRequest(BaseModel):
+    drug_id: int
+    quantity: int
+    customer_id: Optional[int] = None  # Müşterisiz de satılabilir
 
-# 3. Satış Modelleri
-class SaleCreate(BaseModel):
-    drug_id: str
+class OrderRequest(BaseModel): # Depo Siparişi için
+    drug_id: int
     quantity: int
 
-class Sale(BaseModel):
-    id: str
-    drug_id: str
-    quantity_sold: int
-    total_price: float
-    timestamp: datetime.datetime
+# --- ENDPOINTLER ---
 
-# --- GÜVENLİK ve YETKİLENDİRME ---
-# (Sequence diagramındaki roller için basit bir sistem)
-
-auth_scheme = HTTPBearer()
-
-# Token'dan kullanıcıyı bulan (sahte) fonksiyon
-async def get_current_user(token: HTTPAuthorizationCredentials = Security(auth_scheme)):
-    # Token'ı "fake-token-for-{id}-role-{role}" formatında bekliyoruz
-    try:
-        token_str = token.credentials
-        if not token_str.startswith("fake-token-for-"):
-            raise HTTPException(status_code=401, detail="Geçersiz token formatı")
-        
-        parts = token_str.split("-")
-        user_id = parts[3]
-        user_role = parts[5]
-
-        # Kullanıcıyı DB'de bul
-        user = next((p for p in personnel_db if p["id"] == user_id and p["role"] == user_role), None)
-        
-        if not user:
-            raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı veya token geçersiz")
-        
-        return user # Kullanıcının tüm bilgilerini dict olarak döndür
-    except Exception:
-        raise HTTPException(status_code=401, detail="Token ayrıştırılamadı veya geçersiz")
-
-# Sadece Yöneticilerin erişebileceği endpoint'ler için dependency
-async def get_admin_user(current_user: dict = Depends(get_current_user)):
-    """
-    Mevcut kullanıcının rolünün "Yonetici" olup olmadığını kontrol eder.
-    Değilse 403 Forbidden hatası fırlatır.
-    """
-    if current_user["role"] != "Yonetici":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bu işlemi yapmak için yönetici yetkisi gereklidir."
-        )
-    return current_user
-
-
-# --- ENDPOINT'LER ---
-
-@app.get("/")
-async def root():
-    return {"mesaj": "Eczane Otomasyonu API'sine hoş geldiniz!"}
-
-# --- 1. GİRİŞ İŞLEMLERİ ---
-# (Sequence Diagram 1)
-
-@app.post("/login", status_code=status.HTTP_200_OK)
-async def login(creds: PersonnelLogin):
-    """
-    Kullanıcı adı ve şifre ile giriş yapar.
-    Başarılı olursa, rol ve ID içeren sahte bir token döndürür.
-    """
-    # (Backend ->> DB: Kullanıcı kontrolü)
-    user = next((p for p in personnel_db if p["username"] == creds.username and p["password"] == creds.password), None)
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı kullanıcı adı veya şifre"
-        )
-    
-    # (Backend -->> UI: Rol belirlenir)
-    # Token, yetkilendirme (authorization) için rol bilgisini de içermeli.
-    token = f"fake-token-for-{user['id']}-role-{user['role']}"
-    
-    user_info = PersonnelInfo(**user)
+@app.post("/login")
+def login(user: UserLogin):
+    db_user = users_db.get(user.username)
+    if not db_user or db_user["password"] != user.password:
+        raise HTTPException(status_code=401, detail="Hatalı kullanıcı adı veya şifre")
     
     return {
-        "mesaj": "Giriş başarılı",
-        "token": token,
-        "user_info": user_info 
+        "token": f"fake-jwt-token-{user.username}", 
+        "user_info": {"username": user.username, "role": db_user["role"]}
     }
 
-# --- 2. İLAÇ VE STOK YÖNETİMİ ---
-# (Sequence Diagram 2)
-
+# --- İLAÇ YÖNETİMİ ---
 @app.get("/drugs", response_model=List[Drug])
-async def get_all_drugs(current_user: dict = Depends(get_current_user)):
-    """
-    (Personel/Yönetici) Tüm ilaçları ve stok durumlarını listeler.
-    """
-    # (Personel ->> UI: Stok görüntüle ->> Backend: Stok isteği)
+def get_drugs():
     return drugs_db
 
-@app.get("/drugs/low-stock", response_model=List[Drug])
-async def get_low_stock_drugs(current_user: dict = Depends(get_current_user)):
-    """
-    (Personel/Yönetici) Sadece stoğu kritik seviyenin altında olan ilaçları listeler.
-    """
-    # (Backend ->> UI: Düşük stok uyarısı)
-    low_stock_list = [
-        drug for drug in drugs_db 
-        if drug['stock_quantity'] <= drug['low_stock_threshold']
-    ]
-    
-    # (Backend ->> Depo: Sipariş gönder - Simülasyon)
-    if low_stock_list:
-        print(f"SİSTEM UYARISI: {len(low_stock_list)} kalem ilaç düşük stokta. Depoya sipariş gönderiliyor...")
-        
-    return low_stock_list
-
-@app.post("/drugs", response_model=Drug, status_code=status.HTTP_201_CREATED)
-async def create_drug(drug: DrugCreate, admin_user: dict = Depends(get_admin_user)):
-    """
-    (Yönetici) Sisteme yeni bir ilaç ekler.
-    Sadece 'Yonetici' rolündeki kullanıcılar erişebilir.
-    """
-    # (Yonetici ->> UI: İlaç yönetimi ekranı ->> Backend: İlaç bilgileri)
-    
-    new_drug_data = drug.dict()
-    new_drug_data["id"] = str(uuid4())
-    
-    # Pydantic modelini dict'e çevirip DB'ye ekliyoruz (Mock DB için)
-    drugs_db.append(new_drug_data)
-    
-    # (Backend ->> DB: Ekle)
-    return new_drug_data
-
-@app.put("/drugs/{drug_id}", response_model=Drug)
-async def update_drug(drug_id: str, drug_update: DrugCreate, admin_user: dict = Depends(get_admin_user)):
-    """
-    (Yönetici) Mevcut bir ilacın bilgilerini (fiyat, stok vb.) günceller.
-    Sadece 'Yonetici' rolündeki kullanıcılar erişebilir.
-    """
-    drug = next((d for d in drugs_db if d['id'] == drug_id), None)
-    
-    if not drug:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="İlaç bulunamadı")
-    
-    # (Backend ->> DB: Güncelle)
-    # Gelen veriyi (drug_update) mevcut veri (drug) üzerine yaz
-    update_data = drug_update.dict()
-    drug.update(update_data)
-    
+@app.post("/drugs", status_code=201)
+def add_drug(drug: Drug):
+    drug.id = len(drugs_db) + 1
+    drugs_db.append(drug.dict())
     return drug
 
-@app.delete("/drugs/{drug_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_drug(drug_id: str, admin_user: dict = Depends(get_admin_user)):
-    """
-    (Yönetici) Sistemden bir ilacı siler.
-    Sadece 'Yonetici' rolündeki kullanıcılar erişebilir.
-    """
+@app.delete("/drugs/{drug_id}")
+def delete_drug(drug_id: int):
     global drugs_db
-    drug = next((d for d in drugs_db if d['id'] == drug_id), None)
+    drugs_db = [d for d in drugs_db if d["id"] != drug_id]
+    return {"message": "İlaç silindi"}
+
+# --- DEPO ENTEGRASYONU (SİPARİŞ) ---
+@app.post("/order_stock")
+def order_stock(order: OrderRequest):
+    # Simülasyon: Ecza Deposu ile konuşuluyor...
+    print(f"LOG: Depodan {order.quantity} adet ilaç sipariş edildi.")
     
+    for drug in drugs_db:
+        if drug["id"] == order.drug_id:
+            drug["stock_quantity"] += order.quantity
+            return {"message": f"Depo onayı alındı. Stok güncellendi. Yeni Stok: {drug['stock_quantity']}"}
+    
+    raise HTTPException(status_code=404, detail="İlaç bulunamadı")
+
+# --- İTS VE SATIŞ ---
+@app.post("/sales", status_code=201)
+def sell_drug(sale: SaleRequest):
+    # 1. İlacı Bul
+    drug = next((d for d in drugs_db if d["id"] == sale.drug_id), None)
     if not drug:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="İlaç bulunamadı")
+        raise HTTPException(status_code=404, detail="İlaç bulunamadı")
     
-    drugs_db = [d for d in drugs_db if d['id'] != drug_id]
-    return
+    # 2. Stok Kontrolü
+    if drug["stock_quantity"] < sale.quantity:
+        raise HTTPException(status_code=400, detail="Yetersiz stok")
 
+    # 3. İTS SİMÜLASYONU (Diyagramdaki ITS Adımı)
+    its_transaction_id = random.randint(100000, 999999)
+    print(f"LOG: İTS Sistemine bağlanıldı. Reçete/Satış onayı alındı. ID: {its_transaction_id}")
 
-# --- 3. SATIŞ İŞLEMLERİ ---
-# (Sequence Diagram 3)
-
-@app.post("/sales", response_model=Sale, status_code=status.HTTP_201_CREATED)
-async def make_sale(sale: SaleCreate, current_user: dict = Depends(get_current_user)):
-    """
-    (Personel/Yönetici) Bir ilaç satışı gerçekleştirir.
-    Stoktan düşer ve satış kaydı oluşturur.
-    """
-    # (Personel ->> UI: Satış başlat ->> Backend: Ürün bilgisi)
-    drug = next((d for d in drugs_db if d['id'] == sale.drug_id), None)
-
-    if not drug:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Satılmak istenen ilaç bulunamadı")
-
-    if drug['stock_quantity'] < sale.quantity:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Yetersiz stok. Kalan: {drug['stock_quantity']}, İstenen: {sale.quantity}"
-        )
-
-    # (Backend ->> DB: Stok güncelle)
-    drug['stock_quantity'] -= sale.quantity
+    # 4. Satışı Gerçekleştir
+    drug["stock_quantity"] -= sale.quantity
     
-    total_price = drug['price'] * sale.quantity
-    
-    # (Backend ->> ITS: Reçete veya satış bildirimi - Simülasyon)
-    print(f"ITS BİLDİRİMİ: {drug['name']} adlı ilaçtan {sale.quantity} adet satıldı.")
+    sale_record = {
+        "id": len(sales_db) + 1,
+        "drug_name": drug["name"],
+        "quantity": sale.quantity,
+        "total_price": drug["price"] * sale.quantity,
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "customer_id": sale.customer_id,
+        "its_id": its_transaction_id
+    }
+    sales_db.append(sale_record)
 
-    # (Backend ->> DB: Satış kaydı)
-    new_sale = Sale(
-        id=str(uuid4()),
-        drug_id=sale.drug_id,
-        quantity_sold=sale.quantity,
-        total_price=total_price,
-        timestamp=datetime.datetime.now()
-    )
-    
-    # Modeli dict'e çevirip mock DB'ye ekliyoruz
-    sales_db.append(new_sale.dict())
-    
-    # (Backend -->> UI: Satış tamamlandı)
-    return new_sale
+    return {"message": "Satış başarılı. İTS onayı alındı.", "sale": sale_record}
 
-@app.get("/sales", response_model=List[Sale])
-async def get_sales_history(admin_user: dict = Depends(get_admin_user)):
-    """
-    (Yönetici) Tüm satış geçmişini listeler.
-    Sadece 'Yonetici' rolündeki kullanıcılar erişebilir.
-    """
-    return sales_db
+# --- MÜŞTERİ YÖNETİMİ ---
+@app.get("/customers")
+def get_customers():
+    return customers_db
 
+@app.post("/customers")
+def add_customer(customer: Customer):
+    customer.id = len(customers_db) + 1
+    customers_db.append(customer.dict())
+    return customer
 
-# --- Çalıştırma Komutu ---
-# Bu dosyayı main.py olarak kaydet ve terminalde şunu çalıştır:
-# uvicorn main:app --reload
-#
-# Swagger dokümantasyonu için: http://127.0.0.1:8000/docs
-# OpenAPI JSON dosyası için: http://127.0.0.1:8000/openapi.json
+@app.get("/customers/{customer_id}/history")
+def get_customer_history(customer_id: int):
+    # Müşterinin geçmiş siparişlerini bul
+    history = [s for s in sales_db if s["customer_id"] == customer_id]
+    return history
+
+# --- RAPORLAMA ---
+@app.get("/reports/daily")
+def get_daily_report():
+    total_sales = len(sales_db)
+    total_revenue = sum(s["total_price"] for s in sales_db)
+    return {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "total_sales_count": total_sales,
+        "total_revenue": total_revenue,
+        "details": sales_db
+    }
