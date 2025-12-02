@@ -1,0 +1,11 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY . .
+
+RUN pip install flask requests schedule python-decouple
+
+EXPOSE 5000
+
+CMD ["python", "client.py"]
