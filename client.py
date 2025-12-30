@@ -590,11 +590,11 @@ function autoOrderLowStock() {
 
 // Sayfa yüklendiğinde stok grafiğini çiz
 document.addEventListener('DOMContentLoaded', function() {
-    // Stok grafiği verileri
-    const drugNames = {{ drug_names|tojson }};
-    const stockQuantities = {{ stock_quantities|tojson }};
+    // Stok grafiği verileri - DÜZELTİLDİ!
+    const drugNames = {{ drug_names|tojson if drug_names else '[]' }};
+    const stockQuantities = {{ stock_quantities|tojson if stock_quantities else '[]' }};
     
-    if (drugNames && drugNames.length > 0) {
+    if (drugNames && drugNames.length > 0 && drugNames[0] !== '') {
         const ctx = document.getElementById('stockChart').getContext('2d');
         new Chart(ctx, {
             type: 'bar',
@@ -630,6 +630,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         });
+    } else {
+        // Grafik yoksa mesaj göster
+        document.getElementById('stockChart').parentElement.innerHTML = 
+            '<p class="text-muted">Grafik verisi bulunamadı veya henüz ilaç eklenmedi.</p>';
     }
     
     // Sayfa açıldığında uyarı geçmişini yükle
@@ -709,13 +713,16 @@ def index():
             "total_stock_value": 0, "low_stock_count": 0, "critical_stock_count": 0
         }
         
-        # Grafik verileri
-        drug_names = [d["name"] for d in drugs]
-        stock_quantities = [d["stock_quantity"] for d in drugs]
+        # Grafik verileri - GÜVENLİ HALE GETİRİLDİ
+        drug_names = []
+        stock_quantities = []
+        if drugs and len(drugs) > 0:
+            drug_names = [d.get("name", "") for d in drugs]
+            stock_quantities = [d.get("stock_quantity", 0) for d in drugs]
         
         # Uyarı sayıları
-        low_stock_count = len(low_drugs)
-        critical_stock_count = len(critical_drugs)
+        low_stock_count = len(low_drugs) if low_drugs else 0
+        critical_stock_count = len(critical_drugs) if critical_drugs else 0
         
     except Exception as e:
         print(f"Hata: {e}")
@@ -742,14 +749,18 @@ def index():
 @app.route("/login", methods=["POST"])
 def login():
     try:
-        resp = requests.post(f"{API_URL}/login", json=request.form)
+        resp = requests.post(f"{API_URL}/login", json={
+            "username": request.form["username"],
+            "password": request.form["password"]
+        })
         if resp.status_code == 200:
             data = resp.json()
             session["token"] = data["token"]
-            session["role"] = data["user_info"]["role"]
+            session["role"] = data.get("user_info", {}).get("role", data.get("role", "Personel"))
             return redirect("/")
-    except: pass
-    flash("Giriş başarısız! Kullanıcı adı/şifre yanlış veya Sistem kapalı.", "danger")
+    except Exception as e:
+        print(f"Login hatası: {e}")
+        flash("Giriş başarısız! Backend kapalı olabilir.", "danger")
     return redirect("/")
 
 @app.route("/sell", methods=["POST"])

@@ -1,3 +1,4 @@
+
 # Eczane Otomasyonu Projesi (Microservices)
 
 Bu proje, **FastAPI (Backend)** ve **Flask (Frontend)** kullanılarak geliştirilmiş, Docker üzerinde çalışan mikroservis mimarili bir eczane yönetim sistemidir.
