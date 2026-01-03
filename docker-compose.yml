@@ -1,7 +1,7 @@
-version: '3.8'
+﻿version: '3.8'
 
 services:
-  # 1. PostgreSQL Database (PORT DEĞİŞTİ: 5433)
+  # 1. PostgreSQL Database
   postgres:
     image: postgres:15
     container_name: eczane-postgres
@@ -10,17 +10,16 @@ services:
       POSTGRES_PASSWORD: eczane_pass
       POSTGRES_DB: eczane_db
     ports:
-      - "5433:5432"  # DEĞİŞTİ: 5432 → 5433
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U eczane_user"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # 2. pgAdmin (Database Yönetimi)
+  # 2. pgAdmin
   pgadmin:
     image: dpage/pgadmin4
     container_name: eczane-pgadmin
@@ -32,39 +31,49 @@ services:
     depends_on:
       - postgres
 
-  # 3. Backend API
+  # 3. Ana Backend API (FastAPI)
   eczane-backend:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
-    env_file:
-      - .env
     environment:
-      - PYTHONPATH=/app
       - DATABASE_URL=postgresql://eczane_user:eczane_pass@postgres:5432/eczane_db
+      - PYTHONPATH=/app
     volumes:
       - ./alerts:/app/alerts
     depends_on:
       postgres:
         condition: service_healthy
 
-  # 4. Frontend
+  # 4. Frontend (Flask)
   eczane-frontend:
     build:
       context: .
       dockerfile: Dockerfile.client
     ports:
       - "5000:5000"
-    env_file:
-      - .env
     environment:
       - API_URL=http://eczane-backend:8000
     depends_on:
       - eczane-backend
 
-  # 5. JWT Auth (isteğe bağlı)
+  # 5. YENİ: MCP Server (Model Context Protocol)
+  eczane-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: eczane-mcp-server
+    environment:
+      - DATABASE_URL=postgresql://eczane_user:eczane_pass@postgres:5432/eczane_db
+    depends_on:
+      - postgres
+    # MCP stdio server olarak çalışacak
+    stdin_open: true
+    tty: true
+
+  # 6. JWT Auth
   eczane-auth:
     build:
       context: .
@@ -73,8 +82,6 @@ services:
     command: uvicorn server_jwt:app --host 0.0.0.0 --port 8001
     ports:
       - "8001:8001"
-    env_file:
-      - .env
     depends_on:
       - postgres
 

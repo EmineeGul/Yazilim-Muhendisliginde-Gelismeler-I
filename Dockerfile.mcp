@@ -1,0 +1,24 @@
+﻿FROM python:3.11-slim
+
+WORKDIR /app
+
+# Sistem bağımlılıklarını yükle
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Temel bağımlılıkları yükle (MCP hariç)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# MCP için ÖNCE pydantic'i güncelle, SONRA MCP yükle
+RUN pip install --upgrade "pydantic>=2.10.1"
+RUN pip install "mcp>=1.2.0" "fastmcp>=0.1.0"
+
+# Uygulama kodunu kopyala
+COPY . .
+
+# MCP server'ı çalıştır
+CMD ["python", "mcp_server.py"]

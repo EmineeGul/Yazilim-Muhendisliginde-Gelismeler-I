@@ -1,5 +1,5 @@
-Flask==3.0.3
-fastapi==0.104.1
+﻿Flask==3.0.3
+fastapi>=0.110.0
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
 requests==2.31.0
@@ -12,3 +12,5 @@ python-jose[cryptography]==3.3.0
 PyJWT==2.8.0
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
+
+# MCP (Model Context Protocol)
