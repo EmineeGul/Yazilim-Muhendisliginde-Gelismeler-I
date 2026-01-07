@@ -14,3 +14,18 @@ Projeyi en kolay şekilde çalıştırmak için terminalde proje dizinine gelip 
 
 ```bash
 docker-compose up --build
+
+
+sequenceDiagram
+    participant U as Kullanıcı (Frontend)
+    participant A as Auth Servisi (JWT)
+    participant B as Backend API
+    participant D as PostgreSQL
+
+    U->>A: Login (Username/Password)
+    A-->>U: JWT Token Döndür
+    U->>B: GET /drugs (Bearer Token ile)
+    B->>B: Token Doğrulama
+    B->>D: SELECT * FROM drugs
+    D-->>B: İlaç Listesi
+    B-->>U: JSON Verisi (200 OK)
